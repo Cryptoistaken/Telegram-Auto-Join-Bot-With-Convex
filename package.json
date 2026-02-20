@@ -1,0 +1,22 @@
+{
+  "name": "telegram-auto-join-bot",
+  "version": "4.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "convex": "^1.12.0",
+    "dotenv": "^17.3.1",
+    "telegraf": "^4.16.3",
+    "telegram": "^2.26.21"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "private": true
+}
