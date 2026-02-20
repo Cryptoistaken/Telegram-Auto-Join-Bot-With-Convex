@@ -5,13 +5,22 @@ const { Api } = require("telegram/tl");
 const { ConvexClient } = require("convex/browser");
 const path = require("path");
 
+// Suppress gramJS internal version banner
+const _origStdoutWrite = process.stdout.write.bind(process.stdout);
+process.stdout.write = (chunk, ...args) => {
+  if (typeof chunk === "string" && chunk.includes("[Running gramJS version")) return true;
+  return _origStdoutWrite(chunk, ...args);
+};
+
 const _origLog = console.log;
 console.log = () => {};
 require("dotenv").config({ path: path.join(__dirname, "data", ".env") });
 console.log = _origLog;
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
-const AUTHORIZED_USER_ID = parseInt(process.env.AUTHORIZED_USER_ID);
+const AUTHORIZED_USER_IDS = new Set(
+  (process.env.AUTHORIZED_USER_ID || "").split(",").map((id) => parseInt(id.trim())).filter(Boolean)
+);
 const API_ID = parseInt(process.env.API_ID);
 const API_HASH = process.env.API_HASH;
 const CONVEX_URL = process.env.CONVEX_URL;
@@ -99,7 +108,7 @@ async function clearAllJoined() {
 }
 
 function authorize(ctx, next) {
-  if (ctx.from.id !== AUTHORIZED_USER_ID) {
+  if (!AUTHORIZED_USER_IDS.has(ctx.from.id)) {
     logger.warn(`Unauthorized access — user ID: ${ctx.from.id}`);
     return ctx.reply("Unauthorized.");
   }
@@ -600,8 +609,14 @@ async function joinChannelWithSession(sessionData, link) {
 
     try {
       await client.invoke(new Api.channels.JoinChannel({ channel: username }));
-    } catch {
-      await client.invoke(new Api.messages.ImportChatInvite({ hash: username }));
+    } catch (joinErr) {
+      // Only use ImportChatInvite for private invite links (t.me/+hash or t.me/joinchat/hash)
+      const inviteMatch = link.match(/(?:t\.me\/\+|t\.me\/joinchat\/)([A-Za-z0-9_-]+)/);
+      if (inviteMatch) {
+        await client.invoke(new Api.messages.ImportChatInvite({ hash: inviteMatch[1] }));
+      } else {
+        throw joinErr;
+      }
     }
 
     await addJoined(sessionData.name, link);
@@ -839,15 +854,20 @@ async function initiateWebSessionCreation(flowId, flow) {
   logger.ok(`Web session created: ${sessionName}`);
 }
 
-async function pollWebCommands() {
-  try {
-    const cmds = await convex.query("queries:getPendingCommands");
+const processingCmdIds = new Set();
+
+function startWebCommandWatcher() {
+  convex.onUpdate("queries:getPendingCommands", {}, (cmds) => {
+    if (!cmds) return;
     for (const cmd of cmds) {
-      processWebCommand(cmd).catch(suppressOrLog);
+      if (processingCmdIds.has(cmd._id)) continue;
+      processingCmdIds.add(cmd._id);
+      processWebCommand(cmd).catch(suppressOrLog).finally(() => {
+        processingCmdIds.delete(cmd._id);
+      });
     }
-  } catch (err) {
-    suppressOrLog(err);
-  }
+  });
+  logger.info("Web command watcher started (real-time)");
 }
 
 bot.catch((err, ctx) => {
@@ -858,21 +878,24 @@ bot.catch((err, ctx) => {
 async function start() {
   logger.info("Initializing bot...");
 
-  if (!BOT_TOKEN || !AUTHORIZED_USER_ID || !API_ID || !API_HASH || !CONVEX_URL) {
+  if (!BOT_TOKEN || !AUTHORIZED_USER_IDS.size || !API_ID || !API_HASH || !CONVEX_URL) {
     logger.error("Missing required environment variables in data/.env");
     logger.error("Required: BOT_TOKEN, AUTHORIZED_USER_ID, API_ID, API_HASH, CONVEX_URL");
     process.exit(1);
   }
 
-  logger.info("Launching Telegram bot...");
-  await bot.launch();
-  logger.ok("Bot is live and polling for updates");
-
-  setInterval(pollWebCommands, 3000);
-  logger.info("Web command polling started (3s interval)");
 
   await startHeartbeat();
   logger.info("Backend heartbeat started (15s interval)");
+
+  startWebCommandWatcher();
+
+  logger.info("Launching Telegram bot...");
+  bot.launch()
+    .then(() => logger.ok("Bot is live and polling for updates"))
+    .catch((err) => logger.error(`Bot launch failed: ${err.message}`));
+  
+  logger.ok("Bot launched (polling for updates)");
 }
 
 start().catch((err) => {

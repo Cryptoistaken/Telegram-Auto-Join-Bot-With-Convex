@@ -2,32 +2,43 @@
 node_modules/
 web/node_modules/
 
-# Build and IDE
+# Build output
 dist/
 dist-ssr/
-*.local
-.vscode/
-.idea/
-.vercel
-web/.vercel
+web/dist/
 
-# Environment Variables
+# Environment variables — NEVER commit real credentials
 .env
 .env.local
 .env.*.local
 web/.env
+web/.env.local
 
-# Convex
+# Private data directory (contains your real .env)
+data/
+
+# Convex generated files
 convex/_generated/
 web/src/convex/_generated/
 
-# Data and Logs
-data/
+# Vercel
+.vercel
+web/.vercel
+
+# Editor / IDE
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# Logs
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# OS Files
+# OS files
 .DS_Store
 Thumbs.db

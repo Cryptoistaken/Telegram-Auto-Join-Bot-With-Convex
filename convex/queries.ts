@@ -12,6 +12,7 @@ export const getSessions = query({
       username: s.username,
       firstName: s.firstName,
       lastName: s.lastName,
+      sessionString: s.sessionString,
       createdAt: s.createdAt,
     }));
   },
